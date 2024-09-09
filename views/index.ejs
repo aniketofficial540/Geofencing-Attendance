@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Location Tracking</title>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <style>
+        #map {
+            height: 80vh;
+            width: 80vw;
+        }
+    </style>
+</head>
+<body>
+    <h1>Live Location Tracking</h1>
+    <h3>My Coordinates are:</h3>
+    <p id="coordinates">Fetching location...</p>
+    <p id="status"></p>
+    <p id="distance" style="display: none;"></p>
+
+    <center>
+        <div id="map"></div>
+    </center>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const username = urlParams.get('username');
+
+        if (!username) {
+            alert('Username is missing in the URL');
+        }
+
+        const fixedLat = 30.342704;
+        const fixedLng = 77.8882812;
+        const fixedRadius = 50; // Radius in meters
+
+        var map = L.map('map').setView([fixedLat, fixedLng], 15);
+
+        L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+
+        var fixedMarker = L.marker([fixedLat, fixedLng]).addTo(map)
+            .bindPopup("Fixed Location")
+            .openPopup();
+
+        var fixedCircle = L.circle([fixedLat, fixedLng], {
+            color: 'red',
+            fillColor: '#f03',
+            fillOpacity: 0.2,
+            radius: fixedRadius
+        }).addTo(map);
+
+        var marker, circle;
+
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371e3; // Earth's radius in meters
+            const φ1 = lat1 * Math.PI / 180;
+            const φ2 = lat2 * Math.PI / 180;
+            const Δφ = (lat2 - lat1) * Math.PI / 180;
+            const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+            const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+                Math.cos(φ1) * Math.cos(φ2) *
+                Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+            return R * c;
+        }
+
+        function updatePosition(position) {
+            var lat = position.coords.latitude;
+            var lng = position.coords.longitude;
+            
+            document.getElementById("coordinates").innerText = `Latitude: ${lat.toFixed(14)}, Longitude: ${lng.toFixed(14)}`;
+
+            if (!marker) {
+                marker = L.marker([lat, lng]).addTo(map)
+                    .bindPopup("You are here.")
+                    .openPopup();
+                circle = L.circle([lat, lng], {
+                    color: 'blue',
+                    fillColor: '#30f',
+                    fillOpacity: 0.2,
+                    radius: 5
+                }).addTo(map);
+                map.setView([lat, lng], 15);
+            } else {
+                marker.setLatLng([lat, lng]);
+                circle.setLatLng([lat, lng]);
+                map.setView([lat, lng], map.getZoom());
+            }
+
+            const distance = getDistance(lat, lng, fixedLat, fixedLng);
+            if (distance <= fixedRadius) {
+                document.getElementById("status").innerText = "You are inside the radius.";
+                document.getElementById("distance").style.display = 'none';
+            } else {
+                document.getElementById("status").innerText = `You are outside the radius.`;
+                document.getElementById("distance").innerText = `Distance from radius center: ${distance.toFixed(2)} meters.`;
+                document.getElementById("distance").style.display = 'block';
+            }
+
+            fetch('/update-location', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ latitude: lat, longitude: lng, username: username, distance: distance, fixedRadius: fixedRadius})
+            });
+        }
+
+        function showError(error) {
+            switch (error.code) {
+                case error.PERMISSION_DENIED:
+                    alert("User denied the request for Geolocation.");
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    alert("Location information is unavailable.");
+                    break;
+                case error.TIMEOUT:
+                    alert("The request to get user location timed out.");
+                    break;
+                case error.UNKNOWN_ERROR:
+                    alert("An unknown error occurred.");
+                    break;
+            }
+        }
+
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(updatePosition, showError, {
+                enableHighAccuracy: true,
+                maximumAge: 0
+            });
+        } else {
+            alert('Geolocation is not supported by your browser.');
+        }
+    </script>
+</body>
+</html>
